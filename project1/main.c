@@ -9,8 +9,8 @@
 
 /* function prototype in mdriver.c */
 void Seq_pros(int **, int,int,int);
-void Parallel_pros(int **,int,int, int);
-void Parallel_Thread(int **,int,int,int);
+void Parallel_pros(int **,int,int, int,int);
+void Parallel_Thread(int **,int,int,int,int);
 void Print_matrix(int ** ,int,int);
 
 int col=0,row=0;
@@ -97,6 +97,7 @@ int main(int args, char ** argv){
   {
     branch_case = Print_Interface();
     int gen;
+    int child_pros_num=0;
     if(branch_case != 1){
       printf("Enter Generation >> ");
       scanf("%d",&gen);
@@ -112,12 +113,24 @@ int main(int args, char ** argv){
       Seq_pros(mtrx,row,col,gen);
       break;
     case 3: /* Case - Process 병렬 처리 */
+      while (1)
+      {
+        printf("Enter #(Child Process) >> ");
+        scanf("%d", &child_pros_num);
+        if (child_pros_num <= 0){
+          printf("Error - Unexpected child Process\n");
+          printf("Retry it\n");
+        }
+        else{
+          break;
+        }
+      }
       system("clear");
-      Parallel_pros(mtrx,row,col,gen);
+      Parallel_pros(mtrx,row,col,gen,child_pros_num);
       break;
     case 4: /* Case - Thread 병렬 처리 */
       system("clear");
-      Parallel_Thread(mtrx,row,col,gen);
+      //Parallel_Thread(mtrx,row,col,gen);
       break;
     default:
       break;
