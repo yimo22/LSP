@@ -3,9 +3,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <time.h>
 
 #define __MAX__BUFF__ 10000
-
+#define MILISEC_PER_SEC 1000
 
 /* function prototype in mdriver.c */
 void Seq_pros(int **, int,int,int);
@@ -15,10 +16,24 @@ void Print_matrix(int ** ,int,int);
 
 int col=0,row=0;
 
+void Continue_to_next(){
+  printf("\n\n\n\nEnter \\n to continue...\n");
+  fflush(stdin);
+  int c;
+  while (c = getchar() )
+  {
+    getchar();
+    if (c == '\n')
+      return;
+    else
+      printf("please, enter \\n to continue\n");
+  }
+}
 int Print_Interface(){
   int input=0;
   while (1)
   {
+    system("clear");
     printf("==============MENU==================\n");
     printf("(1) Exit Program\n");
     printf("(2) 순차처리\n");
@@ -78,9 +93,16 @@ int **Readmatrix(int **matrix, FILE *fp)
   }
   return matrix;
 }
+void Print_RunningTime(clock_t starttime, clock_t endtime){
+  double diff = (double)(endtime-starttime);
+  printf("Total time : %fms\n",diff);
+
+  return ;
+}
 int main(int args, char ** argv){
   int branch_case = 0;
   int ** mtrx;
+  clock_t start, end;
   FILE * fp;
   if(args != 2){
     fprintf(stderr,"Error - Unexpected argument\n");
@@ -91,6 +113,7 @@ int main(int args, char ** argv){
     fprintf(stderr,"Open error");
     exit(1);
   }
+  start = clock();
   mtrx = Readmatrix(mtrx, fp);
 
   while (1)
@@ -111,6 +134,10 @@ int main(int args, char ** argv){
     case 2: /* Case - 순차 처리 */
       system("clear");
       Seq_pros(mtrx,row,col,gen);
+      end = clock();
+      printf(" << Seq_process Completed! >>\n\n");
+      Print_RunningTime(start,end);
+      Continue_to_next();
       break;
     case 3: /* Case - Process 병렬 처리 */
       while (1)
@@ -127,6 +154,10 @@ int main(int args, char ** argv){
       }
       system("clear");
       Parallel_pros(mtrx,row,col,gen,child_pros_num);
+      end = clock();
+      printf(" << parallel_process Completed! >>\n\n");
+      Print_RunningTime(start,end);
+      Continue_to_next();
       break;
     case 4: /* Case - Thread 병렬 처리 */
       system("clear");
