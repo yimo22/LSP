@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,36 @@ void Print_matrix(int ** ,int,int);
 
 int col=0,row=0;
 
-void Continue_to_next(){
+void Print_RunningTime(clock_t starttime, clock_t endtime){
+  double diff = (double)(endtime-starttime);
+  printf("Total time : %fms\n",diff);
+
+  return ;
+}
+void Continue_to_next(clock_t start, clock_t end, int type, int Thread_or_Process , int gen){
+  switch (type)
+  {
+  case 2: /* seq_process */
+    printf(" << Seq_process Completed! >>\n\n");
+    printf(" Generation : %d\n\n",gen);
+    break;
+  case 3: /* parallel_process */
+    printf(" << parallel_process Completed! >>\n\n");
+    printf(" Number of Process : %d\n\n", Thread_or_Process);
+    printf(" Generation : %d\n\n",gen);
+
+    break;
+  case 4: /* parallel_Thread */
+    printf(" << parallel_Thread Completed! >>\n\n");
+    printf(" Number of Thread : %d\n\n", Thread_or_Process);
+    printf(" Generation : %d\n\n",gen);
+    break;
+  default:
+    printf("Error - Undefined Type\n");
+    exit(1);
+    break;
+  }
+  Print_RunningTime(start,end);
   printf("\n\n\n\nEnter \\n to continue...\n");
   fflush(stdin);
   int c;
@@ -93,12 +123,6 @@ int **Readmatrix(int **matrix, FILE *fp)
   }
   return matrix;
 }
-void Print_RunningTime(clock_t starttime, clock_t endtime){
-  double diff = (double)(endtime-starttime);
-  printf("Total time : %fms\n",diff);
-
-  return ;
-}
 int main(int args, char ** argv){
   int branch_case = 0;
   int ** mtrx;
@@ -120,7 +144,7 @@ int main(int args, char ** argv){
   {
     branch_case = Print_Interface();
     int gen;
-    int child_pros_num=0;
+    int cnt_num=0;
     if(branch_case != 1){
       printf("Enter Generation >> ");
       scanf("%d",&gen);
@@ -135,16 +159,14 @@ int main(int args, char ** argv){
       system("clear");
       Seq_pros(mtrx,row,col,gen);
       end = clock();
-      printf(" << Seq_process Completed! >>\n\n");
-      Print_RunningTime(start,end);
-      Continue_to_next();
+      Continue_to_next(start,end,2,0,gen);
       break;
     case 3: /* Case - Process 병렬 처리 */
       while (1)
       {
         printf("Enter #(Child Process) >> ");
-        scanf("%d", &child_pros_num);
-        if (child_pros_num <= 0){
+        scanf("%d", &cnt_num);
+        if (cnt_num <= 0){
           printf("Error - Unexpected child Process\n");
           printf("Retry it\n");
         }
@@ -153,15 +175,29 @@ int main(int args, char ** argv){
         }
       }
       system("clear");
-      Parallel_pros(mtrx,row,col,gen,child_pros_num);
+      Parallel_pros(mtrx,row,col,gen,cnt_num);
       end = clock();
-      printf(" << parallel_process Completed! >>\n\n");
-      Print_RunningTime(start,end);
-      Continue_to_next();
+      Continue_to_next(start,end,3,cnt_num,gen);
+      
       break;
     case 4: /* Case - Thread 병렬 처리 */
+      while (1)
+      {
+        printf("Enter #(Thread) >> ");
+        scanf("%d", &cnt_num);
+        if (cnt_num <= 0){
+          printf("Error - Unexpected child Process\n");
+          printf("Retry it\n");
+        }
+        else{
+          break;
+        }
+      }
       system("clear");
-      //Parallel_Thread(mtrx,row,col,gen);
+      Parallel_Thread(mtrx,row,col,gen,cnt_num);
+      end = clock();
+      Continue_to_next(start,end,4,cnt_num,gen);
+      
       break;
     default:
       break;
@@ -173,3 +209,4 @@ int main(int args, char ** argv){
 
   return 0;
 }
+
