@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <wait.h>
 #include <time.h>
+#include <stdbool.h>
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/shm.h>
@@ -80,7 +81,7 @@ void MakingOutputFile(int **matrix, int row, int col, int gen, char *filename)
 }
 // 순차처리
 void Seq_pros(int **matrix_pre, int row, int col, int gen)
-{
+{ 
   int depth = 0;
   int **matrix_cur = (int **)malloc(sizeof(int *) * (row + 2));
   for (int i = 0; i < row + 2; i++)
@@ -156,21 +157,22 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
   const int ZERO = 0;
   const int _COLS_PER_ROW_ = col + 2;
   int row_start, row_end;
-  int cnt = 0;
+  int repeated_cnt = 0;
+  int Isrepeated = false;
   void *shmaddr;
   const int _SHMR_MEM_SIZE_ = sizeof(int) * (row + 2) * (col + 2);
   const int _SHMR_KEY_NUM_ = ftok("./mdriver.c", 1);
   // IPC - Shared memory
   // mtrix_pre 와 matrix_cur 를 위한 공유메모리 2 * _SHMR_MEM_SIZE_ 할당
-  int shmid = shmget(_SHMR_KEY_NUM_, _SHMR_MEM_SIZE_ * 2, IPC_CREAT | 0666);
+  int shmid = shmget(_SHMR_KEY_NUM_, _SHMR_MEM_SIZE_ * 2, IPC_CREAT | 0660);
   if (shmid == -1)
   {
-    perror("shmid failed");
+    perror("shmget");
     exit(1);
   }
   if ((shmaddr = shmat(shmid, (void *)0, 0)) == (void *)-1)
   {
-    perror("shmat failed");
+    perror("shmat");
     exit(1);
   }
   // matrix_pre 를 공유 메모리에 올림.
@@ -192,7 +194,7 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
       memcpy((int *)shmaddr + (row + 2) * (col + 2) + i * _COLS_PER_ROW_ + j, &ZERO, sizeof(int));
     }
   }
-  while (gen > cnt)
+  while (gen > repeated_cnt)
   {
     for (int i = 0; i < child_pros_num; i++)
     {
@@ -236,6 +238,7 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
           row_start = i * (row / child_pros_num);
           row_end = (i + 1) * (row / child_pros_num) - 1;
         }
+      
         // child process 는 row_start, row_end를 통해 해당 행을 처리.
         int cnt = 0;
         for (int i = row_start + 1; i <= row_end + 1; i++)
@@ -286,23 +289,27 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
         exit(0);
       }
     }
-    cnt++;
     int status;
     int *parent_shmaddr = (int *)shmaddr;
     // 자식 프로세서가 모두 종료될때까지 wait
     while ((cur_pid = wait(&status) > 0))
       ;
 
-    // matrix_pre갱신
+    // matrix_pre갱신 && repeated 여부 check
+    Isrepeated = true;
     for (int i = 0; i < row + 2; i++)
     {
       for (int j = 0; j < col + 2; j++)
       {
+        // 만약 어느 한값이라도 값지 않다면, 반복되지 않음
+        if(*(parent_shmaddr + i * _COLS_PER_ROW_ + j) != *(parent_shmaddr + (row + 2) * (col + 2) + i * _COLS_PER_ROW_ + j))
+          Isrepeated = false;
+
         *(parent_shmaddr + i * _COLS_PER_ROW_ + j) = *(parent_shmaddr + (row + 2) * (col + 2) + i * _COLS_PER_ROW_ + j);
         *(parent_shmaddr + (row + 2) * (col + 2) + i * _COLS_PER_ROW_ + j) = 0;
       }
     }
-
+    
     // 해당 세대수가 되면 해당 matrix를 file로 out.
     int **matrix_ptr = (int **)malloc(sizeof(int *) * (row + 2));
     for (int i = 0; i < row + 2; i++)
@@ -313,18 +320,40 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
         *(*(matrix_ptr + i) + j) = *(parent_shmaddr + i * _COLS_PER_ROW_ + j);
       }
     }
-    if (cnt < gen)
-      MakingOutputFile(matrix_ptr, row, col, cnt, NULL);
-
-    if (cnt == gen)
-      MakingOutputFile(matrix_ptr, row, col, cnt, "output.matrix");
+    repeated_cnt++;
+    if (Isrepeated)
+    {
+      // 반복될 경우 더이상 진행하지 않고, 해당 파일을 모두 출력한후 종료.
+      while (repeated_cnt < gen)
+      {
+        MakingOutputFile(matrix_ptr, row, col, repeated_cnt, NULL);
+        repeated_cnt++;
+        if (repeated_cnt == gen)
+          MakingOutputFile(matrix_ptr, row, col, repeated_cnt, "output.matrix");
+      }
+      break;
+    }
+    else{
+      // 반복
+      if (repeated_cnt < gen)
+        MakingOutputFile(matrix_ptr, row, col, repeated_cnt, NULL);
+       
+      if (repeated_cnt == gen)
+        MakingOutputFile(matrix_ptr, row, col, repeated_cnt, "output.matrix");
+    }
   }
-  // delete shm
+  // detach shm
   if (shmdt(shmaddr) == -1)
   {
     printf("shmdt failed\n");
     exit(1);
   }
+  // delete shm
+  if( shmctl(shmid,IPC_RMID,0) == -1){
+    perror("shmctl");
+    exit(1);
+  }
+  return ;
 }
 
 void Thread_processing(void *Multi_arg)
