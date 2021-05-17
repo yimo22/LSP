@@ -33,8 +33,10 @@ typedef struct MultiArgu
   int col;
   int thread_row_start;
   int thread_row_end;
+  pthread_t * pid;
+  int for_index;
 } MultiArgu;
-void Reset_MultiArgu(MultiArgu *ptr, int **pre, int **cur, int row, int col, int start, int end)
+void Reset_MultiArgu(MultiArgu *ptr, int **pre, int **cur, int row, int col, int start, int end , pthread_t * p1, int for_index)
 {
   ptr->matrix_pre = pre;
   ptr->matrix_cur = cur;
@@ -42,6 +44,8 @@ void Reset_MultiArgu(MultiArgu *ptr, int **pre, int **cur, int row, int col, int
   ptr->col = col;
   ptr->thread_row_start = start;
   ptr->thread_row_end = end;
+  ptr->pid = p1;
+  ptr->for_index = for_index;
   return;
 }
 void Print_matrix(int **matrix, int row, int col)
@@ -52,6 +56,7 @@ void Print_matrix(int **matrix, int row, int col)
       printf("%d ", *(*(matrix + i) + j));
     printf("\n");
   }
+  printf("\n");
 }
 void MakingOutputFile(int **matrix, int row, int col, int gen, char *filename)
 {
@@ -81,7 +86,7 @@ void MakingOutputFile(int **matrix, int row, int col, int gen, char *filename)
 }
 // 순차처리
 void Seq_pros(int **matrix_pre, int row, int col, int gen)
-{ 
+{
   int depth = 0;
   int **matrix_cur = (int **)malloc(sizeof(int *) * (row + 2));
   for (int i = 0; i < row + 2; i++)
@@ -147,13 +152,14 @@ void Seq_pros(int **matrix_pre, int row, int col, int gen)
   free(matrix_cur);
 }
 // Process병렬처리
-void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_num)
+void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_num, void * ptr)
 {
   /*
      IPC-shared memory 이용한 fork() code 수정 필요.
      
   */
   pid_t cur_pid;
+  pid_t * pid_arr = (pid_t *) ptr;
   const int ZERO = 0;
   const int _COLS_PER_ROW_ = col + 2;
   int row_start, row_end;
@@ -198,7 +204,7 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
   {
     for (int i = 0; i < child_pros_num; i++)
     {
-      if ((cur_pid = fork()) < 0)
+      if ((cur_pid = fork()) < 0 )
       {
         fprintf(stderr, "Error - fork() error\n");
         exit(1);
@@ -206,6 +212,8 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
       else if (cur_pid > 0)
       {
         /* This is parent process */
+        // pid값 저장
+        *(pid_arr + i + repeated_cnt * child_pros_num) = cur_pid;
       }
       else
       {
@@ -238,7 +246,7 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
           row_start = i * (row / child_pros_num);
           row_end = (i + 1) * (row / child_pros_num) - 1;
         }
-      
+
         // child process 는 row_start, row_end를 통해 해당 행을 처리.
         int cnt = 0;
         for (int i = row_start + 1; i <= row_end + 1; i++)
@@ -302,14 +310,12 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
       for (int j = 0; j < col + 2; j++)
       {
         // 만약 어느 한값이라도 값지 않다면, 반복되지 않음
-        if(*(parent_shmaddr + i * _COLS_PER_ROW_ + j) != *(parent_shmaddr + (row + 2) * (col + 2) + i * _COLS_PER_ROW_ + j))
+        if (*(parent_shmaddr + i * _COLS_PER_ROW_ + j) != *(parent_shmaddr + (row + 2) * (col + 2) + i * _COLS_PER_ROW_ + j))
           Isrepeated = false;
-
         *(parent_shmaddr + i * _COLS_PER_ROW_ + j) = *(parent_shmaddr + (row + 2) * (col + 2) + i * _COLS_PER_ROW_ + j);
         *(parent_shmaddr + (row + 2) * (col + 2) + i * _COLS_PER_ROW_ + j) = 0;
       }
     }
-    
     // 해당 세대수가 되면 해당 matrix를 file로 out.
     int **matrix_ptr = (int **)malloc(sizeof(int *) * (row + 2));
     for (int i = 0; i < row + 2; i++)
@@ -333,11 +339,12 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
       }
       break;
     }
-    else{
+    else
+    {
       // 반복
       if (repeated_cnt < gen)
         MakingOutputFile(matrix_ptr, row, col, repeated_cnt, NULL);
-       
+
       if (repeated_cnt == gen)
         MakingOutputFile(matrix_ptr, row, col, repeated_cnt, "output.matrix");
     }
@@ -349,7 +356,8 @@ void Parallel_pros(int **matrix_pre, int row, int col, int gen, int child_pros_n
     exit(1);
   }
   // delete shm
-  if( shmctl(shmid,IPC_RMID,0) == -1){
+  if (shmctl(shmid, IPC_RMID, 0) == -1)
+  {
     perror("shmctl");
     exit(1);
   }
@@ -360,6 +368,8 @@ void Thread_processing(void *Multi_arg)
 {
   MultiArgu *ptr = (MultiArgu *)Multi_arg;
   int cnt = 0;
+  // Get Thread_t id in pid_arr
+ *( (ptr->pid) + (ptr->for_index) ) = pthread_self();
   for (int i = ptr->thread_row_start + 1; i <= ptr->thread_row_end + 1; i++)
   {
     for (int j = 1; j <= (ptr->col); j++)
@@ -401,10 +411,12 @@ void Thread_processing(void *Multi_arg)
   }
 }
 // Thread병렬처리
-void Parallel_Thread(int **matrix_pre, int row, int col, int gen, int Thread_pros_num)
+void Parallel_Thread(int **matrix_pre, int row, int col, int gen, int Thread_pros_num , void * input_ptr)
 {
   pthread_t tid[Thread_pros_num];
+  pthread_t * tid_arr = (pthread_t *) input_ptr;
   MultiArgu *ptr[Thread_pros_num];
+  bool Isrepeated = false;
   int remainder = row % Thread_pros_num;
   int row_start = 0, row_end = 0;
   int cnt = 0;
@@ -441,9 +453,8 @@ void Parallel_Thread(int **matrix_pre, int row, int col, int gen, int Thread_pro
         row_start = i * (row / Thread_pros_num);
         row_end = (i + 1) * (row / Thread_pros_num) - 1;
       }
-      Reset_MultiArgu(ptr[i], matrix_pre, matrix_cur, row, col, row_start, row_end);
-      int state = pthread_create(&tid[i], NULL, (void *)Thread_processing, (void *)ptr[i]);
-      if (state != 0)
+      Reset_MultiArgu(ptr[i], matrix_pre, matrix_cur, row, col, row_start, row_end , tid_arr , cnt * Thread_pros_num + i);
+      if (pthread_create(&tid[i], NULL, (void *)Thread_processing, (void *)ptr[i]) != 0)
       {
         perror("pthread_create error");
         exit(1);
@@ -454,22 +465,40 @@ void Parallel_Thread(int **matrix_pre, int row, int col, int gen, int Thread_pro
       pthread_join(tid[i], NULL);
     // 실행한 gen 증가
     cnt++;
+    Isrepeated = true;
     // Main Thread - update matrix_cur && matirx_pre
     for (int i = 0; i <= row + 1; i++)
     {
       for (int j = 0; j <= col + 1; j++)
       {
+        if(matrix_pre[i][j] != matrix_cur[i][j])
+          Isrepeated = false;
+        
         matrix_pre[i][j] = matrix_cur[i][j];
         matrix_cur[i][j] = 0;
       }
     }
     // Exprot file
-    if (cnt < gen)
-      MakingOutputFile(matrix_pre, row, col, cnt, NULL);
+    if (Isrepeated)
+    {
+      // 반복될 경우 더이상 진행하지 않고, 해당 파일을 모두 출력한후 종료.
+      while (cnt < gen)
+      {
+        MakingOutputFile(matrix_pre, row, col, cnt, NULL);
+        cnt++;
+        if (cnt == gen)
+          MakingOutputFile(matrix_pre, row, col, cnt, "output.matrix");
+      }
+      break;
+    }
+    else
+    {
+      // 반복
+      if (cnt < gen)
+        MakingOutputFile(matrix_pre, row, col, cnt, NULL);
 
-    if (cnt == gen)
-      MakingOutputFile(matrix_pre, row, col, cnt, "output.matrix");
+      if (cnt == gen)
+        MakingOutputFile(matrix_pre, row, col, cnt, "output.matrix");
+    }
   }
 }
-
-
